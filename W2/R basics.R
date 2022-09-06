@@ -177,7 +177,7 @@ library("readr") # Load package
 housing.df <- read_csv("WestRoxbury.csv")
 
 # Note: The above R code assumes that the file WestRoxbury.csv is in your current working directory. 
-read_csv("~/Library/CloudStorage/OneDrive-RutgersUniversity/@Teaching/+Fall2022/Lehigh/BIS448/1PPT/W2/WestRoxbury.csv")
+read_csv("~/Desktop/BUAN448/BUAN-448-Fall-2022/W2/WestRoxbury.csv")
 
 # file.choose()
 mydata.df <- read.csv(file.choose())
