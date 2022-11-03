@@ -1,0 +1,254 @@
+---
+title: "Problem 11.4"
+output:
+  html_document: default
+  pdf_document: default
+date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# **Direct Mailing to Airline Customers (11.4)**
+
+East-West Airlines has entered into a partnership with the wireless phone company Telcon to sell the latter's service via direct mail. The file EastWestAirlinesNN.csv contains a subset of a data sample of who has already received a test offer.
+
+About 13% accepted. You are asked to develop a model to classify East--West customers as to whether they purchase a wireless phone service contract (outcome variable Phone_Sale). This model will be used to classify additional customers.
+
+## Part a)
+
+Run a neural net model on these data, using a single hidden layer with 5 nodes. Remember to first convert categorical variables into dummies and scale numerical predictor variables to a 0--1 (use function preprocess() with method = "range"---see Chapter 7). Generate a decile-wise lift chart for the training and validation sets. Interpret the meaning (in business terms) of the leftmost bar of the validation decile- wise lift chart.
+
+### Load the data and removing missing values
+
+```{r Load the data, message=FALSE, warning=FALSE}
+df <- read.csv("EastWestAirlinesNN.csv")
+t(t(names(df)))
+# remove unnecessary variables
+df <- df[,-c(1)]
+# check and remove missing values
+summary(df)
+df <- na.omit(df)
+summary(df)
+```
+
+### Partitioning the data
+
+```{r Partitioning, message=FALSE, warning=FALSE}
+set.seed(12345)
+train.index <- sample(row.names(df), 0.6*dim(df)[1])  
+valid.index <- setdiff(row.names(df), train.index)  
+train.df <- df[train.index, ]
+valid.df <- df[valid.index, ]
+```
+
+### Standarization the data based on the train set
+
+```{r Normalizing, message=FALSE, warning=FALSE}
+library(caret)
+norm.values <- preProcess(train.df[,-15], method="range") 
+train.norm.df <- predict(norm.values, train.df[,-15])
+valid.norm.df <- predict(norm.values, valid.df[,-15])
+```
+
+using method="range" to convert all numerical variables to a scale of zero and one. The new mean is zero and new sd is equal to 1.
+
+### Neural Network Configuration
+
+```{r NN Configuration, message=FALSE, warning=FALSE}
+library(neuralnet)
+nn <- neuralnet(factor(train.df$Phone_sale) ~ Topflight +
+                  Balance +
+                  Qual_miles +
+                  cc1_miles. +
+                  cc2_miles. +
+                  cc3_miles. +
+                  Bonus_miles +
+                  Bonus_trans +
+                  Flight_miles_12mo +
+                  Flight_trans_12 +
+                  Online_12+Email +
+                  Club_member +
+                  Any_cc_miles_12mo,
+                data = train.norm.df, linear.output = F,
+                hidden = 5)
+plot(nn, rep = "best")
+```
+
+### Accuracy on training and validation data
+
+```{r Predictions on training, message=FALSE, warning=FALSE}
+options(scipen = 0)
+train.pred <- predict(nn, train.norm.df[,-c(15)])
+
+train.class <- apply(train.pred,1,which.max)-1
+confusionMatrix(as.factor(train.class), as.factor(train.df$Phone_sale))$overall[1]
+```
+
+```{r Predictions on validation, message=FALSE, warning=FALSE}
+valid.pred <- predict(nn, valid.norm.df[,-c(15)])
+
+valid.class <- apply(valid.pred,1,which.max)-1
+confusionMatrix(as.factor(valid.class), as.factor(valid.df$Phone_sale))$overall[1]
+```
+
+***Comment***: it is expected to see lower accuracy for the validation set (0.8590772) compared to the traning set (0.8772986).
+
+### Lift chart and Decile wise lift chart
+
+Plot the lift and decile-wise lift charts for training data
+
+```{r lift chart train, message=FALSE, warning=FALSE}
+library(gains)
+gain <- gains(train.df$Phone_sale, train.class, groups = 10)
+plot(c(0,gain$cume.obs), c(0, gain$cume.pct.of.total*sum(train.df$Phone_sale)),
+     xlab="# cases", ylab = "Cumulative", main="Lift chart for training data", 
+     type = "l")
+lines(c(0,sum(train.df$Phone_sale)) ~ c(0, dim(train.df)[1]),lty=1)
+```
+
+```{r compute deciles, message=FALSE, warning=FALSE}
+gain
+heights <- gain$mean.resp/mean(valid.df$Phone_sale)
+midpoints <- barplot(heights, names.arg = gain$depth, ylim = c(0,9),
+                     xlab = "Percentile", ylab = "Mean Response", 
+                     main = "Decile-wise chart for training data")
+```
+
+Plot the lift chart and decile wise lift charts for validation data
+
+```{r lift chart validation, message=FALSE, warning=FALSE}
+gain <- gains(valid.df$Phone_sale, valid.class, groups = 10)
+plot(c(0,gain$cume.obs), c(0, gain$cume.pct.of.total*sum(valid.df$Phone_sale)),
+     xlab="# cases", ylab = "Cumulative", main="Lift chart for validation data", 
+     type = "l")
+lines(c(0,sum(valid.df$Phone_sale)) ~ c(0, dim(valid.df)[1]),lty=1)
+```
+
+```{r compute deciles for validation, message=FALSE, warning=FALSE}
+gain
+heights <- gain$mean.resp/mean(valid.df$Phone_sale)
+midpoints <- barplot(heights, names.arg = gain$depth, ylim = c(0,9),
+                     xlab = "Percentile", ylab = "Mean Response", 
+                     main = "Decile-wise chart for validation data")
+```
+
+### Part b)
+
+Comment on the difference between the training and validation lift charts.
+
+***Conclusion***:
+
+-   By observing the lift chart for training data we can say that the model (fitted to the training data) outperforms the base model by far for the training data.
+
+-   By observing the lift chart for the validation dataset, we see that it is a bit different from the training set lift chart.
+
+-   The model does quite poorly in capturing the most likely purchasers in the validation data. The good performance with the training data represents over-fitting, not true predictive capability.
+
+### Part c)
+
+Run a second neural net model on the data, this time setting the number of hidden nodes to 1. Comment now on the difference between this model and the model you ran earlier, and how overfitting might have affected results.
+
+run nn with 1 hidden node
+
+```{r nn with 1 hidden node, message=FALSE, warning=FALSE}
+library(neuralnet)
+nn <- neuralnet(factor(train.df$Phone_sale) ~ Topflight + 
+                  Balance +
+                  Qual_miles +
+                  cc1_miles. + 
+                  cc2_miles. + 
+                  cc3_miles. + 
+                  Bonus_miles + 
+                  Bonus_trans + 
+                  Flight_miles_12mo + 
+                  Flight_trans_12 + 
+                  Online_12+Email + 
+                  Club_member + 
+                  Any_cc_miles_12mo, 
+                data = train.norm.df, linear.output = F, 
+                hidden = 1)
+
+plot(nn, rep = "best")
+```
+
+#### Predictions on training data
+
+```{r Predictions on training with 1nn, message=FALSE, warning=FALSE}
+options(scipen = 0)
+train.pred <- predict(nn, train.norm.df[,-c(15)])
+train.class <- apply(train.pred,1,which.max)-1
+confusionMatrix(as.factor(train.class), as.factor(train.df$Phone_sale))$overall[1]
+```
+
+Prediction on validation data
+
+```{r Predictions on validation with 1nn, message=FALSE, warning=FALSE}
+valid.pred <- predict(nn, valid.norm.df[,-c(15)])
+valid.class <- apply(valid.pred,1,which.max)-1
+confusionMatrix(as.factor(valid.class), as.factor(valid.df$Phone_sale))$overall[1]
+```
+
+#### Lift chart and decile wise lift chart on training dataset
+
+```{r plot lift and decile-wise lift chart for training data, message=FALSE, warning=FALSE}
+gain <- gains(train.df$Phone_sale, train.class, groups = 10)
+plot(c(0,gain$cume.pct.of.total*sum(train.df$Phone_sale)) ~ c(0,gain$cume.obs),
+     xlab="# cases", ylab = "Cumulative", main="Lift chart for training data", 
+     type = "l")
+lines(c(0,sum(train.df$Phone_sale)) ~ c(0, dim(train.df)[1]),lty=1)
+
+```
+
+```{r decile wise lift chart chart second nn, message=FALSE, warning=FALSE}
+gain
+heights <- gain$mean.resp/mean(valid.df$Phone_sale)
+midpoints <- barplot(heights, names.arg = gain$depth, ylim = c(0,9),
+                     xlab = "Percentile", ylab = "Mean Response", 
+                     main = "Decile-wise chart for training data")
+```
+
+#### Lift chart and decile wise lift chart on validation dataset
+
+```{r plot lift chart validation data, message=FALSE, warning=FALSE}
+gain <- gains(valid.df$Phone_sale, valid.class, groups = 10)
+plot(c(0,gain$cume.pct.of.total*sum(valid.df$Phone_sale)) ~ c(0,gain$cume.obs),
+     xlab="# cases", ylab = "Cumulative", main="Lift chart for validation data", 
+     type = "l")
+lines(c(0,sum(valid.df$Phone_sale)) ~ c(0, dim(valid.df)[1]),lty=1)
+```
+
+```{r decile wise lift chart for second nn, message=FALSE, warning=FALSE}
+gain
+heights <- gain$mean.resp/mean(valid.df$Phone_sale)
+midpoints <- barplot(heights, names.arg = gain$depth, ylim = c(0,9),
+                     xlab = "Percentile", ylab = "Mean Response", 
+                     main = "Decile-wise chart for validation data")
+```
+
+***Conclusion***:
+
+-   Both the models (1 layer and 5 layers) seems to performing poorly. Look at the Sensitivity values in the confusion matrix output.
+
+-   The model with 5 hidden layers appears to have a bit higher validation error. In our example, in the confusion matrix of the 5 hidden nodes, we get a validation error of (1-0.8590772=0.1409228) 14.09% and for 1 hidden node we get an error rate of (1-0.1278837=0.1278837) 12.79%.
+
+-   The better neural network model is therefore the one with 1 hidden node.
+
+-   In general, a weakness of the neural network is that it can easily overfit the data, causing the error rate in validation data (and, most important, in new data) to be too large.
+
+-   It is therefore important to limit the number of hidden nodes and layers and not to over-train the data.
+
+-   Over-fitting can be detected by examining the performance on the validation set. The validation error rate starts deteriorating while the training set performance may continues to improve.
+
+### Part d)
+
+What sort of information, if any, is provided about the effects of the various variables?
+
+***Answer***:
+
+-   The output from a neural network does not contain information on the effects of each of the predictors.
+
+-   Unlike linear or logistic regression where a coefficient is attached to each predictor, or even classification and regression trees, where the location of a variable indicates its importance, in neural networks there is no such information. In that sense it is often called a "black box".

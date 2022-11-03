@@ -1,0 +1,256 @@
+---
+title: "Untitled"
+output: html_document
+date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(FNN)
+library(caret)
+```
+
+# Personal Loan Acceptance (7.2)
+
+Universal Bank is a relatively young bank growing rapidly in terms of
+overall customer acquisition. The majority of these customers are
+liability customers (depositors) with varying sizes of relationship with
+the bank. The customer base of asset customers (borrowers) is quite
+small, and the bank is interested in expanding this base rapidly to
+bring in more loan business. In particular, it wants to explore ways of
+converting its liability customers to personal loan customers (while
+retaining them as depositors).
+
+A campaign that the bank ran last year for liability customers showed a
+healthy conversion rate of over 9% success. This has encouraged the
+retail marketing department to devise smarter campaigns with better
+target marketing. The goal is to use k-NN to predict whether a new
+customer will accept a loan offer. This will serve as the basis for the
+design of a new campaign.
+
+The file UniversalBank.csv contains data on 5000 customers. The data
+include customer demographic information (age, income, etc.), the
+customer's relationship with the bank (mortgage, securities account,
+etc.), and the customer response to the last personal loan campaign
+(Personal Loan). Among these 5000 customers, only 480 (= 9.6%) accepted
+the personal loan that was offered to them in the earlier campaign.
+Partition the data into training (60%) and validation (40%) sets.
+
+## Step 1) Load data first
+
+```{r load the data, message=FALSE, warning=FALSE}
+universal.df <- read.csv("UniversalBank.csv")
+dim(universal.df)
+```
+
+## Step 2) partition the data
+
+```{r partition, message=FALSE, warning=FALSE}
+set.seed(1)  
+train.index <- sample(row.names(universal.df), 0.6*dim(universal.df)[1])
+valid.index <- setdiff(row.names(universal.df), train.index)  
+train.df <- universal.df[train.index, -c(1, 5)]
+valid.df <- universal.df[valid.index, -c(1, 5)]
+```
+
+### Part a) Determining the class of a new customer
+
+Consider the following customer: Age = 40, Experience = 10, Income = 84,
+Family = 2, CCAvg = 2, Education = 2, Mortgage = 0, Securities Account =
+0, CD Account = 0, Online = 1, and Credit Card = 1.
+
+Perform a k-NN classification with all predictors except ID and ZIP code
+using k = 1.
+
+-   Remember to transform categorical predictors with more than two
+    categories into dummy variables first.
+
+-   Specify the success class as 1 (loan acceptance), and use the
+    default cutoff value of 0.5. How would this customer be classified?
+
+#### Step 1: Normalize the data
+
+```{r Step 1 part a}
+
+norm.values <- preProcess(train.df[, -8], method=c("center", "scale"))
+train.norm.df <- predict(norm.values, train.df[, -8])
+valid.norm.df <- predict(norm.values, valid.df[, -8])
+
+new.cust <- data.frame(Age = 40,                
+                       Experience = 10,     
+                       Income = 84,   
+                       Family = 2,          
+                       CCAvg = 2,          
+                       Education = 2,        
+                       Mortgage = 0,           
+                       Securities.Account = 0, 
+                       CD.Account = 0, 
+                       Online = 1,            
+                       CreditCard = 1)
+new.cust
+new.cust.norm <- predict(norm.values, new.cust)
+```
+
+#### Step 2: Find the 1 nearest neighbor score
+
+```{r knn score}
+knn.pred <- knn(train = train.norm.df, 
+                       test = new.cust.norm, 
+                       cl = train.df$Personal.Loan, k = 1)
+knn.pred
+```
+
+***Conclusion***: From the output we conclude that the above customer is
+classified as belonging to the "loan not accepted" group.
+
+### Part b) finding the optimal k
+
+What is a choice of k that balances between overfitting and ignoring the
+predictor information?
+
+```{r optimal k}
+accuracy.df <- data.frame(k = seq(1, 15, 1), overallaccurace = rep(0, 15))
+for(i in 1:15) {
+  knn.pred <- knn(train = train.norm.df, 
+                         test = valid.norm.df, 
+                         cl = train.df$Personal.Loan, k = i)
+  accuracy.df[i, 2] <- confusionMatrix(knn.pred, 
+                                       as.factor(valid.df$Personal.Loan), positive = "1")$overall[1]
+}
+accuracy.df
+koptimal <- which(accuracy.df[,2] == max(accuracy.df[,2]))
+koptimal
+```
+
+***Conclusion***: best k = 3. The value of k that balances between
+overfitting (k too small) and ignoring the predictor information (k too
+large) is 3.
+
+### Part c) confusion matrix
+
+Show the confusion matrix for the validation data that results from
+using the best k.
+
+```{r confusion matrix}
+knn.pred <- knn(train = train.norm.df, 
+                       test = valid.norm.df, 
+                       cl = train.df$Personal.Loan, k = koptimal)
+confusionMatrix(knn.pred, as.factor(valid.df$Personal.Loan), positive = "1")
+```
+
+### Part d) kNN score
+
+Consider the following customer: Age = 40, Experience = 10, Income = 84,
+Family = 2, CCAvg = 2, Education_1 = 0, Education_2 = 1, Education_3 =
+0, Mortgage = 0, Securities Account = 0, CD Account = 0, Online = 1 and
+Credit Card = 1. Classify the customer using the best k.
+
+```{r example score}
+knn.pred <- knn(train = train.norm.df, 
+                       test = new.cust.norm, 
+                       cl = train.df$Personal.Loan, k = koptimal)
+knn.pred
+```
+
+***Conclusion***: From the output we conclude that the above customer is
+classified as belonging to the "loan not accepted" group.
+
+### Part e) Re-partitioning
+
+Repartition the data, this time into training, validation, and test sets
+(50% : 30% : 20%). Apply the k-NN method with the best k chosen. Compare
+the confusion matrix of the test set with that of the training and
+validation sets. Comment on the differences and their reason.
+
+```{r Re-partitioning}
+set.seed(1)  
+train.index <- sample(row.names(universal.df), 0.5*dim(universal.df)[1])
+valid.index <- sample(setdiff(row.names(universal.df), train.index), 
+                      0.3*dim(universal.df)[1])
+test.index <-  setdiff(row.names(universal.df), c(train.index, valid.index)) 
+train.df <- universal.df[train.index, -c(1, 5)]
+valid.df <- universal.df[valid.index, -c(1, 5)]
+test.df <- universal.df[test.index, -c(1, 5)]
+```
+
+#### Normalization
+
+```{r Normalization}
+train.norm.df <- train.df[,-8]
+valid.norm.df <- valid.df[,-8]
+test.norm.df <- test.df[,-8]
+norm.values <- preProcess(train.df[, -8], method=c("center", "scale"))
+train.norm.df <- predict(norm.values, train.df[, -8])
+valid.norm.df <- predict(norm.values, valid.df[, -8])
+test.norm.df <- predict(norm.values, test.df[, -8])
+```
+
+#### finding the optimal k
+
+```{r optimal k with new train and valid sets}
+accuracy.df <- data.frame(k = seq(1, 15, 1), overallaccurace = rep(0, 15))
+for(i in 1:15) {
+  knn.pred <- knn(train = train.norm.df, 
+                         test = valid.norm.df, 
+                         cl = train.df$Personal.Loan, k = i)
+  accuracy.df[i, 2] <- confusionMatrix(knn.pred, 
+                                       as.factor(valid.df$Personal.Loan), positive = "1")$overall[1]
+}
+accuracy.df
+koptimal2 <- which(accuracy.df[,2] == max(accuracy.df[,2]))
+koptimal2
+```
+
+***Conclusion***: best k = 3. The value of k that balances between
+overfitting (k too small) and ignoring the predictor information (k too
+large) is 3.
+
+#### Predictions on train
+
+```{r Predictions}
+knn.predt <- knn(train = train.norm.df, 
+                       test = train.norm.df, 
+                       cl = train.df$Personal.Loan, k = koptimal2)
+
+confusionMatrix(knn.predt, as.factor(train.df$Personal.Loan), positive = "1")$overall[1]
+```
+
+#### Predictions on Validation
+
+```{r Predictions on Validation}
+knn.predv <- knn(train = train.norm.df, 
+                       test = valid.norm.df, 
+                       cl = train.df$Personal.Loan, k = koptimal2)
+
+confusionMatrix(knn.predv, as.factor(valid.df$Personal.Loan), positive = "1")$overall[1]
+
+```
+
+#### Predictions on test
+
+```{r predictions on test}
+knn.predtt <- knn(train = train.norm.df, 
+                       test = test.norm.df, 
+                       cl = train.df$Personal.Loan, k = koptimal2)
+confusionMatrix(knn.predtt, as.factor(test.df$Personal.Loan), positive = "1")$overall[1]
+```
+
+***Conclusion:*** We choose the best k, which minimizes the
+misclassification rate in the validation set. Our best k is 3. From the
+above confusion matrices we observe the following:
+
+-   The error rate (0.0272) increases from the training set to the
+    validation set (0.0333), and again from the validation set to the
+    test set (0.046).
+
+-   The differences are small, but this decreased performance, at least
+    in the test set, is not unexpected - both the training and
+    validation sets are used in setting the optimal k so there can be
+    overfitting.
+
+-   The test set was not used to select the optimal k, so reflects
+    expected performance with new data, slightly less accurate.
